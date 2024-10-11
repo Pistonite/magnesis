@@ -2,11 +2,15 @@ use std::{io::Cursor, path::PathBuf, process::ExitCode, sync::Arc, time::Instant
 
 use clap::Parser;
 use error_stack::{report, Result, ResultExt};
-use reqwest::{header::{HeaderMap, HeaderName, HeaderValue}, Client};
+use reqwest::{
+    header::{HeaderMap, HeaderName, HeaderValue},
+    Client,
+};
 use tokio::{fs, process::Command, spawn, task::JoinSet};
 
 /// Pull artifacts from GitHub Actions
 #[derive(Debug, clap::Parser)]
+#[clap(version)]
 struct Cli {
     /// Path to the output directory.
     #[clap(short, long, default_value = "dist")]
@@ -25,7 +29,7 @@ struct Cli {
 async fn main() -> ExitCode {
     let cli = Cli::parse();
     let start = Instant::now();
-    if let Err(err) =  main_internal(cli).await {
+    if let Err(err) = main_internal(cli).await {
         eprintln!("---");
         eprintln!("error: {:?}", err);
         return ExitCode::FAILURE;
@@ -48,19 +52,29 @@ async fn main_internal(cli: Cli) -> Result<(), Error> {
     let rev = spawn(get_rev(rev));
 
     let mut headers = HeaderMap::new();
-    let token = HeaderValue::from_str(&format!("Bearer {}", token)).change_context(Error::InvalidToken)?;
+    let token =
+        HeaderValue::from_str(&format!("Bearer {}", token)).change_context(Error::InvalidToken)?;
     headers.insert("Authorization", token);
-    headers.insert("User-Agent", HeaderValue::from_name(HeaderName::from_static("reqwest")));
-    let client = Client::builder().default_headers(headers).build()
+    headers.insert(
+        "User-Agent",
+        HeaderValue::from_name(HeaderName::from_static("reqwest")),
+    );
+    let client = Client::builder()
+        .default_headers(headers)
+        .build()
         .change_context(Error::RequestClient)?;
 
-    let repo = repo.await.change_context(Error::Repo)? .attach_printable("please specify the repo with --repo or see GitHub README for more details")? ;
+    let repo = repo.await.change_context(Error::Repo)?.attach_printable(
+        "please specify the repo with --repo or see GitHub README for more details",
+    )?;
     println!("getting artifacts from repo `{}`", repo);
 
-    let artifacts = get_artifacts(&client, &repo).await.change_context(Error::GetArtifacts)?;
-    let rev = rev.await.change_context(Error::Rev)?
-    .attach_printable("please specify the revision with --rev or see GitHub README for more details")?
-    ;
+    let artifacts = get_artifacts(&client, &repo)
+        .await
+        .change_context(Error::GetArtifacts)?;
+    let rev = rev.await.change_context(Error::Rev)?.attach_printable(
+        "please specify the revision with --rev or see GitHub README for more details",
+    )?;
     println!("finding artifacts for revision `{}`", rev);
     let artifacts = artifacts.into_filtered_by_rev(&rev)?;
     println!("found {} artifacts", artifacts.len());
@@ -75,9 +89,7 @@ async fn main_internal(cli: Cli) -> Result<(), Error> {
         println!("downloading `{}`", artifact.name);
         let client = Arc::clone(&client);
         let out_dir = output.clone();
-        handles.spawn(async move {
-            artifact.download(&client, out_dir).await
-        });
+        handles.spawn(async move { artifact.download(&client, out_dir).await });
     }
 
     while let Some(result) = handles.join_next().await {
@@ -121,46 +133,45 @@ async fn create_output(output: String) -> Result<PathBuf, Error> {
     let path = PathBuf::from(&output);
     if path.exists() {
         println!("removing existing output at `{}`", output);
-        fs::remove_dir_all(&path).await.
-            change_context(Error::CreateOutput)?;
+        fs::remove_dir_all(&path)
+            .await
+            .change_context(Error::CreateOutput)?;
     }
-    fs::create_dir_all(&path).await
+    fs::create_dir_all(&path)
+        .await
         .change_context(Error::CreateOutput)?;
     Ok(path)
 }
 
 async fn get_rev(rev: String) -> Result<String, Error> {
-    if rev.len() == 40 && rev.chars().all(|c| c.is_ascii_hexdigit()){
+    if rev.len() == 40 && rev.chars().all(|c| c.is_ascii_hexdigit()) {
         return Ok(rev);
     }
 
-
     let output = Command::new("git")
-        .args(&["rev-parse", &rev])
+        .args(["rev-parse", &rev])
         .output()
         .await
         .change_context(Error::Command)?;
     if !output.status.success() {
-        return Err(report!(Error::Command))
-        .attach_printable(format!("status: {}", output.status));
+        return Err(report!(Error::Command)).attach_printable(format!("status: {}", output.status));
     }
-    let decoded = std::str::from_utf8(&output.stdout)
-        .change_context(Error::Command)?;
+    let decoded = std::str::from_utf8(&output.stdout).change_context(Error::Command)?;
     Ok(decoded.trim().to_string())
 }
 
 async fn get_repo() -> Result<String, Error> {
     let output = Command::new("git")
-        .args(&["remote", "get-url", "origin"])
+        .args(["remote", "get-url", "origin"])
         .output()
         .await
         .change_context(Error::Command)?;
     if !output.status.success() {
-        return Err(report!(Error::Command))
-        .attach_printable(format!("status: {}", output.status));
+        return Err(report!(Error::Command)).attach_printable(format!("status: {}", output.status));
     }
     let decoded = std::str::from_utf8(&output.stdout)
-        .change_context(Error::Command)?.trim();
+        .change_context(Error::Command)?
+        .trim();
 
     let repo = if let Some(repo) = decoded.strip_prefix("http://github.com/") {
         repo
@@ -170,7 +181,7 @@ async fn get_repo() -> Result<String, Error> {
         repo
     } else {
         return Err(report!(Error::Repo))
-        .attach_printable(format!("failed to get repo from: {}", decoded));
+            .attach_printable(format!("failed to get repo from: {}", decoded));
     };
 
     Ok(repo.strip_suffix(".git").unwrap_or(repo).to_string())
@@ -188,7 +199,11 @@ fn get_token() -> Result<String, Error> {
 }
 
 async fn get_artifacts(client: &Client, repo: &str) -> Result<Artifacts, Error> {
-    let response = client.get(&format!("https://api.github.com/repos/{}/actions/artifacts", repo))
+    let response = client
+        .get(&format!(
+            "https://api.github.com/repos/{}/actions/artifacts",
+            repo
+        ))
         .send()
         .await
         .change_context(Error::Request)?
@@ -207,13 +222,15 @@ struct Artifacts {
 
 impl Artifacts {
     pub fn into_filtered_by_rev(self, rev: &str) -> Result<Vec<Artifact>, Error> {
-        let artifacts = self.artifacts.into_iter()
+        let artifacts = self
+            .artifacts
+            .into_iter()
             .filter(|artifact| artifact.workflow_run.head_sha == rev)
             .collect::<Vec<_>>();
 
         if artifacts.is_empty() {
             return Err(report!(Error::GetArtifacts))
-            .attach_printable("no artifacts found for the specified revision");
+                .attach_printable("no artifacts found for the specified revision");
         }
 
         Ok(artifacts)
@@ -229,27 +246,25 @@ struct Artifact {
 
 impl Artifact {
     pub async fn download(&self, client: &Client, out_dir: PathBuf) -> Result<(), Error> {
-        self.download_internal(client, out_dir).await
+        self.download_internal(client, out_dir)
+            .await
             .change_context(Error::DownloadArtifact)
             .attach_printable_lazy(|| format!("artifact: {}", self.name))
             .attach_printable_lazy(|| format!("url: {}", self.archive_download_url))
     }
 
-    async fn download_internal(
-        &self, client: &Client, mut out_dir: PathBuf) -> Result<(), Error> {
+    async fn download_internal(&self, client: &Client, mut out_dir: PathBuf) -> Result<(), Error> {
         let response = client
             .get(&self.archive_download_url)
             .send()
             .await
-            .change_context(Error::Request)
-        ?;
+            .change_context(Error::Request)?;
 
         if response.status() == 410 {
             return Err(report!(Error::Expired));
         } else if response.status() != 200 {
-            return Err(report!(Error::Request)).attach_printable(
-                format!("status: {}", response.status())
-            );
+            return Err(report!(Error::Request))
+                .attach_printable(format!("status: {}", response.status()));
         }
 
         let bytes = response.bytes().await.change_context(Error::Request)?;
