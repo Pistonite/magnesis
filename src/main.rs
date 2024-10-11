@@ -200,7 +200,7 @@ fn get_token() -> Result<String, Error> {
 
 async fn get_artifacts(client: &Client, repo: &str) -> Result<Artifacts, Error> {
     let response = client
-        .get(&format!(
+        .get(format!(
             "https://api.github.com/repos/{}/actions/artifacts",
             repo
         ))
