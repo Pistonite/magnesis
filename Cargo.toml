@@ -2,6 +2,9 @@
 name = "magnesis"
 version = "0.1.0"
 edition = "2021"
+repository = "https://github.com/Pistonite/magnesis"
+license = "MIT"
+authors = ["Pistonight <pistonknight@outlook.com>"]
 publish = false
 
 [dependencies]
